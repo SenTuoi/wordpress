@@ -1,0 +1,21 @@
+blockquote {
+   @import url(http://fonts.googleapis.com/css?family=Droid+Serif:400italic);
+   font-family: 'Droid Serif', serif;
+   font-size:16px;
+   font-style:italic;
+   width:450px;
+   background-color:#fbf6f0;
+   border-left:3px dashed #d5bc8c;
+   border-right:3px dashed #d5bc8c;
+   text-align:center;
+}
+blockquote cite {
+   color: #a1a1a1;
+   font-size: 14px;
+   display: block;
+   margin-top: 5px;
+}
+ 
+blockquote cite:before {
+   content: "\2014 \2009";
+}
