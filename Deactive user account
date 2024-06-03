@@ -1,0 +1,125 @@
+Mã tùy chỉnh này (Đoạn mã) cho phép vô hiệu hóa tài khoản người dùng. Nó ngăn chặn truy cập trực tiếp để bảo mật và cung cấp các chức năng sau:
+
+1. Vô hiệu hóa tài khoản người dùng: Người dùng đã đăng nhập, ngoại trừ quản trị viên, có thể vô hiệu hóa tài khoản của họ thông qua liên kết được tạo. Quá trình này bao gồm kiểm tra bảo mật (không một lần) và bước xác nhận.
+2. Kích hoạt lại do quản trị viên hướng dẫn: Quản trị viên có thể kích hoạt lại tài khoản người dùng.
+3. Cải tiến giao diện người dùng: Thêm các cột mới trong khu vực quản trị để hiển thị trạng thái tài khoản người dùng và cung cấp liên kết kích hoạt lại.
+4. Hạn chế đăng nhập: Ngăn người dùng bị vô hiệu hóa đăng nhập.
+Tích hợp WordPress: Sử dụng các hook WordPress để tích hợp liền mạch với hệ thống quản lý người dùng.
+
+Shortcode: [custom_deactive]
+
+// Prevent direct access to the script
+defined('ABSPATH') or die('No script kiddies please!');
+
+function custom_deactivate_account() {
+    if (is_user_logged_in() && !current_user_can('administrator')) {
+        $current_user = wp_get_current_user();
+        $user_id = $current_user->ID;
+        $nonce = wp_create_nonce('custom_deactivate_account_nonce');
+
+        // Deactivation URL with nonce and user ID
+        $deactivation_url = admin_url('admin-post.php?action=custom_user_deactivate&user_id=' . $user_id . '&nonce=' . $nonce);
+
+        $html = '<a href="' . esc_url($deactivation_url) . '" id="custom-deactivate-account" onclick="return confirmDeactivation();" style="font-size: 14px; font-weight: 400; color: #ffffff !important; text-decoration: none; border-radius: 5px;">Deactivate</a>';
+
+        // Add inline JavaScript for confirmation
+        $html .= '
+        <script>
+            function confirmDeactivation() {
+                return confirm("Are you sure you want to deactivate your account?");
+            }
+        </script>';
+
+        return $html;
+    } else {
+        return '<div>Deactive</div>';
+    }
+}
+
+function custom_user_deactivate() {
+    if (!isset($_GET['nonce']) || !wp_verify_nonce($_GET['nonce'], 'custom_deactivate_account_nonce')) {
+        error_log('Nonce verification failed');
+        wp_die('Security check failed');
+    }
+
+    $user_id = intval($_GET['user_id']);
+    
+    if (get_current_user_id() == $user_id && !current_user_can('administrator')) {
+        update_user_meta($user_id, 'is_deactivated', true);
+        wp_redirect(home_url());
+        exit;
+    } else {
+        error_log('User ID mismatch or unauthorized access attempt');
+        wp_die('You do not have permission to perform this action.');
+    }
+}
+
+add_action('admin_post_custom_user_deactivate', 'custom_user_deactivate');
+add_shortcode('custom_deactive', 'custom_deactivate_account');
+
+function restrict_deactivated_login($user, $username, $password) {
+    if (is_a($user, 'WP_User')) {
+        $is_deactivated = get_user_meta($user->ID, 'is_deactivated', true);
+        if ($is_deactivated) {
+            return new WP_Error('deactivated_account', __('Your account has been deactivated.'));
+        }
+    }
+    return $user;
+}
+
+add_filter('authenticate', 'restrict_deactivated_login', 30, 3);
+
+function add_custom_user_column($columns) {
+    $columns['account_status'] = 'Account Status';
+    return $columns;
+}
+
+add_filter('manage_users_columns', 'add_custom_user_column');
+
+function show_custom_user_column_content($value, $column_name, $user_id) {
+    if ('account_status' === $column_name) {
+        $is_deactivated = get_user_meta($user_id, 'is_deactivated', true);
+        return $is_deactivated ? 'Inactive' : 'Active';
+    }
+    return $value;
+}
+
+add_action('manage_users_custom_column', 'show_custom_user_column_content', 10, 3);
+
+function custom_user_reactivate() {
+    if (current_user_can('administrator')) {
+        $user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
+        delete_user_meta($user_id, 'is_deactivated');
+        wp_redirect(admin_url('users.php?updated=reactivated'));
+        exit;
+    }
+    wp_redirect(admin_url('users.php'));
+    exit;
+}
+
+add_action('admin_post_reactivate_user', 'custom_user_reactivate');
+
+function add_reactivate_column($columns) {
+    $columns['reactivate_user'] = 'Reactivate';
+    return $columns;
+}
+
+add_filter('manage_users_columns', 'add_reactivate_column');
+
+function reactivate_column_content($value, $column_name, $user_id) {
+    if ('reactivate_user' === $column_name) {
+        $user = get_userdata($user_id);
+        if (in_array('administrator', (array) $user->roles)) {
+            return 'N/A';
+        }
+
+        $is_deactivated = get_user_meta($user_id, 'is_deactivated', true);
+        if ($is_deactivated) {
+            return '<a href="' . admin_url('admin-post.php?action=reactivate_user&user_id=' . $user_id) . '">Reactivate</a>';
+        }
+        return 'Active';
+    }
+    return $value;
+}
+
+add_action('manage_users_custom_column', 'reactivate_column_content', 10, 3);
