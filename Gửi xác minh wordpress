@@ -1,0 +1,177 @@
+Dont forget to use the shortcode:
+[verify_user_account]
+Change this ; https://your-domain-name.com/your-verfi-page-name-slug   to yours url
+Custom code :
+
+
+// Hook into user registration to generate and send the verification code
+add_action('user_register', 'send_verification_code', 10, 1);
+function send_verification_code($user_id) {
+$user = get_userdata($user_id);
+// Skip if the user is an administrator
+if (in_array('administrator', (array) $user->roles)) {
+return;
+}
+// Generate a random 6-digit verification code
+$verification_code = wp_rand(100000, 999999);
+// Save the verification code and set the account to inactive
+update_user_meta($user_id, 'verification_code', $verification_code);
+update_user_meta($user_id, 'has_verified_account', 'no');
+// Send the verification code to the user's email
+$to = $user->user_email;
+$subject = 'Verify Your Account';
+$message = "Welcome to our website! Please click on the following link to enter your verification code: https://your-domain-name.com/your-verfi-page-name-slug//?user_id={$user_id}\n\nVerification Code: $verification_code";
+wp_mail($to, $subject, $message);
+}
+// Shortcode to display the verification field and button
+add_shortcode('verify_user_account', 'verify_user_account_shortcode');
+function verify_user_account_shortcode() {
+// Check if a user ID is passed in the URL
+$user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
+// If no user ID is found, return an error message
+if (!$user_id) {
+return '<div class="verify-error">Invalid verification link. No user ID provided.</div>';
+}
+// Nonce field for AJAX verification
+$nonce = wp_create_nonce('verify-account-nonce');
+ob_start();
+?>
+<div class="verify">
+<form id="verification_form" method="post">
+<input type="text" name="verification_code" placeholder="Enter your 6-digit code" required>
+<input type="hidden" name="user_id" value="<?php echo esc_attr($user_id); ?>">
+<input type="submit" name="verify_account" value="Submit">
+<input type="hidden" name="security" value="<?php echo $nonce; ?>">
+</form>
+<div id="verification_message"></div>
+</div>
+<script type="text/javascript">
+jQuery(document).ready(function($) {
+$('#verification_form').on('submit', function(e) {
+e.preventDefault();
+var verification_code = $('input[name="verification_code"]').val();
+var user_id = $('input[name="user_id"]').val();
+var security = $('input[name="security"]').val();
+$.ajax({
+url: '<?php echo admin_url('admin-ajax.php'); ?>',
+type: 'post',
+data: {
+action: 'verify_user_account',
+verification_code: verification_code,
+user_id: user_id,
+security: security
+},
+success: function(response) {
+$('#verification_message').html(response.data);
+}
+});
+});
+});
+</script>
+<?php
+return ob_get_clean();
+}
+
+// AJAX action for verifying user account
+add_action('wp_ajax_nopriv_verify_user_account', 'handle_verification_code_submission');
+add_action('wp_ajax_verify_user_account', 'handle_verification_code_submission');
+function handle_verification_code_submission() {
+// Check the nonce for security
+check_ajax_referer('verify-account-nonce', 'security');
+$user_id = isset($_POST['user_id']) ? intval($_POST['user_id']) : 0;
+$submitted_code = sanitize_text_field($_POST['verification_code']);
+$correct_code = get_user_meta($user_id, 'verification_code', true);
+$is_verified = get_user_meta($user_id, 'has_verified_account', true);
+// Check if the user is already verified
+if ($is_verified === 'yes') {
+wp_send_json_success('Your account has already been activated.');
+wp_die();
+}
+// Proceed with verification if the user is not already verified
+if ($correct_code === $submitted_code) {
+update_user_meta($user_id, 'has_verified_account', 'yes');
+delete_user_meta($user_id, 'verification_code'); // Optional: Remove the code once verified
+wp_send_json_success('Your account has been activated and now you can log in.');
+} else {
+wp_send_json_error('Incorrect verification code.');
+}
+wp_die(); // this is required to terminate immediately and return a proper response
+}
+// Ensure jQuery is enqueued
+add_action('wp_enqueue_scripts', 'enqueue_jquery_script');
+function enqueue_jquery_script() {
+wp_enqueue_script('jquery');
+}
+// Add a custom column to the user list to show account status
+add_filter('manage_users_columns', 'add_custom_user_column');
+function add_custom_user_column($columns) {
+$columns['account_status'] = 'Account Status';
+return $columns;
+}
+add_action('manage_users_custom_column', 'show_custom_user_column_content', 10, 3);
+function show_custom_user_column_content($value, $column_name, $user_id) {
+if ('account_status' === $column_name) {
+$user = get_userdata($user_id);
+// Skip if the user is an administrator
+if (in_array('administrator', (array) $user->roles)) {
+return 'N/A'; // Not applicable for administrators
+}
+$is_verified = get_user_meta($user_id, 'has_verified_account', true);
+return ($is_verified === 'yes') ? 'Active' : 'Inactive';
+}
+return $value;
+}
+// Hook into the login process to prevent unverified users from logging in
+add_filter('wp_authenticate_user', 'check_verification_status', 10, 2);
+function check_verification_status($user, $password) {
+// Check if the user has the 'administrator' role; if so, skip the check
+if (in_array('administrator', (array) $user->roles)) {
+return $user;
+}
+// Check if the account is verified
+$is_verified = get_user_meta($user->ID, 'has_verified_account', true);
+if ($is_verified !== 'yes') {
+// Prevent the user from logging in and provide a message
+$error = new WP_Error();
+$error->add('account_unverified', __('Your account must be verified before you can log in.'));
+return $error;
+}
+// If the user is verified, return the WP_User object
+return $user;
+}
+// Hook into 'init' to check if the logged-in user is verified.
+add_action('init', 'auto_logout_unverified_users');
+function auto_logout_unverified_users() {
+if (is_user_logged_in()) {
+$current_user = wp_get_current_user();
+// Skip if the user is an administrator.
+if (in_array('administrator', (array) $current_user->roles)) {
+return;
+}
+// Check if the account is verified.
+$is_verified = get_user_meta($current_user->ID, 'has_verified_account', true);
+if ($is_verified !== 'yes') {
+// Log out the user.
+wp_logout();
+// Optionally, redirect to the login page with a verification message.
+$login_url = wp_login_url() . '?verification=required';
+wp_redirect($login_url);
+exit;
+}
+}
+}
+// Add a filter to add a query var for the verification message.
+add_filter('query_vars', 'add_custom_query_var');
+function add_custom_query_var($vars){
+$vars[] = "verification";
+return $vars;
+}
+// Hook to 'login_form' to display a message if redirected from the forced logout.
+add_action('login_form', 'redirected_login_message');
+function redirected_login_message() {
+// Check if the verification query var is set.
+$verification_required = get_query_var('verification', false);
+if ($verification_required == 'required') {
+echo '<p class="message">You must verify your account before logging in.</p>';
+}
+}
