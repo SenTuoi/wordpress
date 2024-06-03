@@ -1,0 +1,10 @@
+blockquote {
+width: 450px;
+background-image:url('http://example.com/wp-content/themes/your-theme/images/lined_paper.png');
+border: 1px solid #ccc;
+box-shadow: 1px 1px 1px #ccc;
+font-style: italic;
+}
+blockquote cite:before {
+content: "\2014 \2009";
+}
