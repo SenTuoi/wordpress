@@ -1,0 +1,158 @@
+1. Tôi đã phát triển một mã tùy chỉnh mới cho JetFormBuilder, được thiết kế để cho phép người dùng cắt hình ảnh. 
+Tôi rất vui được chia sẻ nó với nhóm, giúp hầu hết thành viên ở đây có thể truy cập được nó.
+
+2. Để bắt đầu, bạn cần tạo bốn trường: hai trường phương tiện và hai trường ẩn. Thật thuận tiện khi sử dụng cùng 
+tên trường trên các trường này nên không cần sửa đổi mã tùy chỉnh.
+
+3. Một khía cạnh quan trọng mà tôi không đề cập trong video là đặt trường phương tiện làm hình thu nhỏ của bài đăng và định cấu hình 
+trường thư viện dưới dạng trường Meta. Việc này được thực hiện trong phần 'Đăng hành động gửi' trong phần 'Chèn/Cập nhật bài đăng' trong phần BẢN ĐỒ TRƯỜNG.
+
+4. Tôi đã bao gồm mã tùy chỉnh CSS trong liên kết được cung cấp để giúp bạn tạo kiểu và tùy chỉnh trường phương tiện
+
+5. Cuối cùng, điều quan trọng là phải kích hoạt tính năng bảo vệ CSRF để tăng cường bảo mật.
+
+
+CSS code:
+/* Style and customize the media field */
+.jet-form-builder__field-wrap.jet-form-builder-file-upload {
+    border-radius: 10px !important;
+    border-style: dashed !important;
+    border-width: 2px !important;
+    border-color: #69727d !important;
+    padding: 10px !important;
+}
+
+
+
+
+Custom code ( PHP snippet, all in one )
+
+
+function enqueue_cropperjs_scripts() {
+    wp_enqueue_script('jquery');
+    wp_enqueue_script('cropperjs', 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.9/cropper.min.js', array('jquery'), '1.5.9', true);
+    wp_enqueue_style('cropperjs-css', 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.9/cropper.min.css', array(), '1.5.9', 'all');
+}
+
+add_action('wp_enqueue_scripts', 'enqueue_cropperjs_scripts');
+
+function add_custom_cropperjs_javascript() {
+    ?>
+    <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            var croppers = {};
+            var galleryCroppers = [];
+            var maxGalleryFiles = 2; // Maximum files allowed for gallery_field
+            var maxMediaFiles = 1; // Maximum files allowed for media_field_upload
+
+            function generateUniqueFilename(prefix) {
+                var timestamp = new Date().getTime();
+                var randomNum = Math.floor(Math.random() * 1000);
+                return prefix + '_' + timestamp + '_' + randomNum + '.jpg';
+            }
+
+            function setupCropper(fieldId, previewIdBase, buttonName) {
+                $('#' + fieldId).change(function(event) {
+                    var files = event.target.files;
+                    var fileCount = (fieldId === 'gallery_field') ? galleryCroppers.length : (croppers[fieldId] ? 1 : 0);
+
+                    if ((fieldId === 'gallery_field' && fileCount + files.length > maxGalleryFiles) ||
+                        (fieldId === 'media_field_upload' && fileCount + files.length > maxMediaFiles)) {
+                        alert('You can only upload a maximum of ' + (fieldId === 'gallery_field' ? maxGalleryFiles : maxMediaFiles) + ' image(s).');
+                        this.value = ''; // Clear the selected files
+                        return; // Stop further execution
+                    }
+
+                    var imageContainer = $('#' + fieldId).siblings('.image-container');
+                    if (imageContainer.length === 0) {
+                        imageContainer = $('<div class="image-container"></div>'); // Create a container for all images
+                        $('#' + fieldId).after(imageContainer); // Append the container after the input field
+                    }
+
+                    $.each(files, function(index, file) {
+                        if (!file.type.match('image.*')) {
+                            alert('Invalid file type. Please select an image.');
+                            return true;
+                        }
+
+                        var fileReader = new FileReader();
+                        var previewId = previewIdBase + fileCount + index;
+
+                        fileReader.onload = function(e) {
+                            var imagePreview = $('<img id="' + previewId + '" class="gallery-image">');
+                            imagePreview.attr('src', e.target.result);
+
+                            var imagePreviewContainer = $('<div class="gallery-image-container"></div>');
+                            imagePreviewContainer.append(imagePreview);
+                            imageContainer.append(imagePreviewContainer);
+
+                            imagePreview.show();
+
+                            if (fieldId === 'gallery_field') {
+                                galleryCroppers.push(new Cropper(imagePreview[0], {
+                                    aspectRatio: 600 / 400,
+                                    viewMode: 1
+                                }));
+                            } else if (fieldId === 'media_field_upload') {
+                                if (croppers[fieldId]) {
+                                    croppers[fieldId].destroy();
+                                }
+                                croppers[fieldId] = new Cropper(imagePreview[0], {
+                                    aspectRatio: 1,
+                                    viewMode: 1
+                                });
+                            }
+                        };
+
+                        fileReader.readAsDataURL(file);
+                    });
+
+                    $('input[name="' + buttonName + '"]').attr('type', 'button').val('Crop Images').show();
+                });
+            }
+
+            setupCropper('media_field_upload', 'mediaImagePreview', 'crop_button');
+            setupCropper('gallery_field', 'galleryImagePreview', 'crop_button_gallery');
+
+            $(document).on('click', 'input[name="crop_button"]', function() {
+                if (croppers['media_field_upload']) {
+                    croppers['media_field_upload'].getCroppedCanvas({
+                        width: 300,
+                        height: 300
+                    }).toBlob(function(blob) {
+                        var uniqueFilename = generateUniqueFilename('croppedImage');
+                        var newFile = new File([blob], uniqueFilename, {type: 'image/jpeg'});
+                        var dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(newFile);
+                        $('#media_field_upload')[0].files = dataTransfer.files;
+                    }, 'image/jpeg');
+                }
+                $(this).hide();
+            });
+
+            $(document).on('click', 'input[name="crop_button_gallery"]', function() {
+                var dataTransfer = new DataTransfer();
+                $.each(galleryCroppers, function(index, cropper) {
+                    if (cropper) {
+                        cropper.getCroppedCanvas({
+                            width: 600,
+                            height: 400
+                        }).toBlob(function(blob) {
+                            var uniqueFilename = generateUniqueFilename('croppedGalleryImage_' + index);
+                            var newFile = new File([blob], uniqueFilename, {type: 'image/jpeg'});
+                            dataTransfer.items.add(newFile);
+
+                            if (index === galleryCroppers.length - 1) {
+                                $('#gallery_field')[0].files = dataTransfer.files;
+                            }
+                        }, 'image/jpeg');
+                    }
+                });
+                $(this).hide();
+            });
+        });
+    </script>
+    <?php
+}
+
+add_action('wp_footer', 'add_custom_cropperjs_javascript');
