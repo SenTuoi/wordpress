@@ -1,0 +1,32 @@
+// Add custom fields to menu item
+function my_custom_menu_item($item_id, $item) {
+    wp_nonce_field('my_custom_menu_nonce', '_my_custom_menu_nonce_name');
+    $value = get_post_meta($item_id, '_menu_item_css_id', true);
+    ?>
+    <p class="field-css-id description description-wide">
+        <label for="edit-menu-item-css-id-<?php echo $item_id; ?>">
+            CSS ID<br>
+            <input type="text" id="edit-menu-item-css-id-<?php echo $item_id; ?>" class="widefat code edit-menu-item-custom" name="menu-item-css-id[<?php echo $item_id; ?>]" value="<?php echo esc_attr($value); ?>" />
+        </label>
+    </p>
+    <?php
+}
+add_action('wp_nav_menu_item_custom_fields', 'my_custom_menu_item', 10, 2);
+
+// Save custom field value
+function my_update_custom_menu_item($menu_id, $menu_item_db_id) {
+    if (isset($_POST['menu-item-css-id']) && is_array($_POST['menu-item-css-id']) && isset($_POST['menu-item-css-id'][$menu_item_db_id])) {
+        $custom_value = $_POST['menu-item-css-id'][$menu_item_db_id];
+        update_post_meta($menu_item_db_id, '_menu_item_css_id', $custom_value);
+    }
+}
+add_action('wp_update_nav_menu_item', 'my_update_custom_menu_item', 10, 2);
+
+// Edit the menu item display
+function my_custom_nav_menu_item($item_output, $item, $depth, $args) {
+    if ($css_id = get_post_meta($item->ID, '_menu_item_css_id', true)) {
+        $item_output = preg_replace('/<a /', '<a id="' . esc_attr($css_id) . '" ', $item_output, 1);
+    }
+    return $item_output;
+}
+add_filter('walker_nav_menu_start_el', 'my_custom_nav_menu_item', 10, 4);
