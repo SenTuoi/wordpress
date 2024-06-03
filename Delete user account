@@ -1,6 +1,14 @@
+Đoạn mã tùy chỉnh này cho phép xóa tài khoản người dùng.
+Chức năng:
+
+1. Xóa tài khoản người dùng: Cho phép người dùng đã đăng nhập, ngoại trừ quản trị viên, xóa tài khoản của họ. Nó bao gồm kiểm tra bảo mật (không một lần) 
+và hộp thoại xác nhận để xác nhận ý định của người dùng.
+2. Bảo tồn nội dung: Khi xóa tài khoản, nội dung của người dùng (bài đăng và liên kết) được giữ nguyên bằng cách bỏ gán nó, thay vì xóa nó.
+3. Bảo mật và tích hợp: Thực hiện kiểm tra bảo mật để ngăn chặn truy cập trái phép và tích hợp với WordPress bằng cách sử dụng móc và mã ngắn.
+4. Quy trình xóa tùy chỉnh: Thay vì sử dụng chức năng xóa người dùng mặc định của WordPress, nó sử dụng một phương pháp tùy chỉnh để xóa dữ liệu người dùng trong khi 
+giữ nguyên bài viết và liên kết của họ.
+
 Shortcode: [custom_delete]
-
-
 
 // Prevent direct access to the script
 defined('ABSPATH') or die('No script kiddies please!');
