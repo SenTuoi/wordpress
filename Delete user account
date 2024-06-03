@@ -1,0 +1,74 @@
+Shortcode: [custom_delete]
+
+
+
+// Prevent direct access to the script
+defined('ABSPATH') or die('No script kiddies please!');
+
+function custom_delete_account() {
+    if (is_user_logged_in() && !current_user_can('administrator')) {
+        $current_user = wp_get_current_user();
+        $user_id = $current_user->ID;
+        
+        // Create nonce for security
+        $nonce = wp_create_nonce('custom_user_delete_nonce');
+
+        // Delete URL with nonce and user ID
+        $delete_url = admin_url('admin-post.php?action=custom_user_delete&user_id=' . $user_id . '&_wpnonce=' . $nonce);
+
+        // Delete button with JavaScript confirmation
+        $html = '<a href="' . esc_url($delete_url) . '" id="custom-delete-account" onclick="return confirmDeletion();" style="display: inline-block; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 400;">Delete Account?</a>';
+
+        // JavaScript for confirmation dialog
+        $html .= '
+        <script>
+            function confirmDeletion() {
+                return confirm("Are you sure you want to delete your account?");
+            }
+        </script>';
+
+        return $html;
+    } else {
+        return '<div>Delete.</div>';
+    }
+}
+
+function custom_user_delete() {
+    // Verify nonce for security
+    if (!isset($_GET['_wpnonce']) || !wp_verify_nonce($_GET['_wpnonce'], 'custom_user_delete_nonce')) {
+        wp_die('Security check failed');
+    }
+
+    $user_id = intval($_GET['user_id']);
+    
+    if (get_current_user_id() == $user_id && !current_user_can('administrator')) {
+        // Manually remove user without deleting their content
+        custom_remove_user_without_deleting_content($user_id);
+
+        wp_redirect(home_url());
+        exit;
+    } else {
+        wp_die('You do not have permission to perform this action.');
+    }
+}
+
+function custom_remove_user_without_deleting_content($user_id) {
+    global $wpdb;
+
+    // Update the posts and links to be unassigned
+    $wpdb->update($wpdb->posts, ['post_author' => 0], ['post_author' => $user_id]);
+    $wpdb->update($wpdb->links, ['link_owner' => 0], ['link_owner' => $user_id]);
+
+    // Delete user without using wp_delete_user
+    wp_cache_delete($user_id, 'users');
+    wp_cache_delete($user_id, 'user_meta');
+
+    $wpdb->delete($wpdb->users, ['ID' => $user_id]);
+    $wpdb->delete($wpdb->usermeta, ['user_id' => $user_id]);
+
+    // Cleanup user-related capabilities and metadata
+    clean_user_cache($user_id);
+}
+
+add_action('admin_post_custom_user_delete', 'custom_user_delete');
+add_shortcode('custom_delete', 'custom_delete_account');
